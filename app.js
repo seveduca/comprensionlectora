@@ -38,6 +38,7 @@ const loadingProgress = document.getElementById('loadingProgress');
 let generatedQuestions = [];
 let currentGrade = '';
 let currentOptionsCount = 4;
+let uploadedImageBase64 = ''; // Para guardar la imagen como base64 y mostrarla en el PDF
 
 // --- INICIALIZACIÓN ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -124,6 +125,15 @@ function handleFiles(files) {
     if (files.length > 0) {
         selectedFile = files[0];
         fileNameDisplay.textContent = "📎 " + selectedFile.name;
+        
+        // Si es imagen, guardamos el base64 para incrustarla en el PDF
+        if (selectedFile.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (e) => { uploadedImageBase64 = e.target.result; };
+            reader.readAsDataURL(selectedFile);
+        } else {
+            uploadedImageBase64 = ''; // Limpiar si es un PDF
+        }
     }
 }
 
@@ -214,10 +224,26 @@ async function extractTextFromFile(file) {
 }
 
 // --- LLAMADA A LA IA ---
+
+// Mapa de dificultad por curso para el prompt de la IA
+const gradeDifficultyMap = {
+    '1ro Básico': 'niños de 6-7 años que están aprendiendo a leer. Usa oraciones muy cortas y sencillas, vocabulario de no más de 2 sílabas cuando sea posible, y preguntas literales simples sobre personajes y acciones obvias del texto.',
+    '2do Básico': 'niños de 7-8 años con lectura emergente. Usa oraciones cortas, vocabulario cotidiano y sencillo, y preguntas sobre hechos concretos del texto.',
+    '3ro Básico': 'niños de 8-9 años. Usa vocabulario simple, oraciones de complejidad baja-media, y preguntas que mezclen lo literal con alguna inferencia sencilla.',
+    '4to Básico': 'niños de 9-10 años. Usa vocabulario intermedio, oraciones de complejidad media, e incluye preguntas de inferencia y causa-efecto simples.',
+    '5to Básico': 'estudiantes de 10-11 años. Usa vocabulario variado, oraciones de complejidad media, e incluye preguntas de análisis, causa-efecto e inferencia.',
+    '6to Básico': 'estudiantes de 11-12 años. Usa vocabulario más rico, oraciones de complejidad media-alta, e incluye preguntas de análisis, opinión fundamentada e intención del autor.',
+    '7mo Básico': 'estudiantes de 12-13 años. Usa vocabulario complejo, oraciones de nivel intermedio-avanzado, y preguntas de análisis crítico, lenguaje figurado e inferencias profundas.',
+    '8vo Básico': 'estudiantes de 13-14 años. Usa vocabulario avanzado, oraciones de alta complejidad, y preguntas de pensamiento crítico, análisis literário e inferencias complejas.'
+};
+
 function buildPrompt(text, grade, count, altCount) {
+    const difficultyDescription = gradeDifficultyMap[grade] || 'estudiantes de educación básica';
     return `
     Actúa como un experto profesor y creador de evaluaciones de español y comprensión lectora.
-    Tu tarea es leer el texto provisto y crear una evaluación de comprensión lectora para estudiantes de ${grade}.
+    Tu tarea es leer el texto provisto y crear una evaluación de comprensión lectora para ${grade}.
+    
+    NIVEL DE DIFICULTAD Y ADECUACIÓN: Las preguntas, las alternativas y el lenguaje usado deben ser apropiados para ${difficultyDescription} No uses vocabulario, conceptos ni estructuras gramaticales que estén fuera del alcance de este grupo etario.
     
     Instrucciones estrictas:
     1. Genera exactamente ${count} preguntas de selección múltiple.
@@ -361,19 +387,23 @@ function generatePDF() {
             <h3>Texto Principal</h3>
         `;
         
-    // Insertamos el texto (usamos los campos en el flujo)
+    // Insertamos el texto o la imagen subida
     let rawTextContent = '';
+    let imageHtml = '';
     const activeTab = document.querySelector('.tab-btn.active').dataset.target;
     if (activeTab === 'tab-text') {
-        rawTextContent = textContent.value;
+        rawTextContent = textContent.value.replace(/\n/g, '<br>');
     } else {
-        rawTextContent = "<em>(Texto extraído del documento/imagen subida. El profesor o el estudiante de la prueba deberán disponer de la copia de lectura física).</em>";
+        // Si hay imagen guardada en base64, la incrustamos tal cual
+        if (uploadedImageBase64) {
+            imageHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${uploadedImageBase64}" style="max-width: 100%; max-height: 350px; border: 1px solid #ddd; border-radius: 4px;" alt="Imagen de la lectura"></div>`;
+        } else {
+            rawTextContent = '<em>(Texto extraído del documento subido)</em>';
+        }
     }
     
-    // Reemplazar saltos de línea por <br>
-    rawTextContent = rawTextContent.replace(/\n/g, '<br>');
-    
     pdfHtml += `
+            ${imageHtml}
             <p>${rawTextContent}</p>
         </div>
         
