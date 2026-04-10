@@ -406,9 +406,11 @@ function generatePDF() {
         rawTextContent = '<em>(El texto de la lectura fue extraído del documento subido)</em>';
     }
 
+    const textBlock = rawTextContent ? '<p>' + rawTextContent + '</p>' : '';
+
     pdfHtml += `
             ${imageHtml}
-            ${rawTextContent ? `<p>${rawTextContent}</p>` : ''}
+            ${textBlock}
         </div>
         
         <h3 style="margin-bottom: 15px;">Preguntas de Comprensión</h3>
