@@ -387,24 +387,28 @@ function generatePDF() {
             <h3>Texto Principal</h3>
         `;
         
-    // Insertamos el texto o la imagen subida
+    // Incluir siempre AMBOS si existen: imagen y/o texto
     let rawTextContent = '';
     let imageHtml = '';
-    const activeTab = document.querySelector('.tab-btn.active').dataset.target;
-    if (activeTab === 'tab-text') {
+
+    // Texto del textarea (independiente de qué pestaña está activa)
+    if (textContent.value.trim()) {
         rawTextContent = textContent.value.replace(/\n/g, '<br>');
-    } else {
-        // Si hay imagen guardada en base64, la incrustamos tal cual
-        if (uploadedImageBase64) {
-            imageHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${uploadedImageBase64}" style="max-width: 100%; max-height: 350px; border: 1px solid #ddd; border-radius: 4px;" alt="Imagen de la lectura"></div>`;
-        } else {
-            rawTextContent = '<em>(Texto extraído del documento subido)</em>';
-        }
     }
-    
+
+    // Imagen subida (si existe)
+    if (uploadedImageBase64) {
+        imageHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${uploadedImageBase64}" style="max-width: 100%; max-height: 350px; border: 1px solid #ddd; border-radius: 4px;" alt="Imagen de la lectura"></div>`;
+    }
+
+    // Si no hay ni texto ni imagen (fue PDF), indicamos que el texto viene del archivo
+    if (!rawTextContent && !imageHtml) {
+        rawTextContent = '<em>(El texto de la lectura fue extraído del documento subido)</em>';
+    }
+
     pdfHtml += `
             ${imageHtml}
-            <p>${rawTextContent}</p>
+            ${rawTextContent ? `<p>${rawTextContent}</p>` : ''}
         </div>
         
         <h3 style="margin-bottom: 15px;">Preguntas de Comprensión</h3>
