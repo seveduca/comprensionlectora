@@ -110,6 +110,10 @@
 
             <!-- Botón Principal Generar -->
             <div class="action-footer">
+                <!-- Banner de error visible dentro del iframe -->
+                <div id="errorBanner" style="display:none; background:#fee2e2; border:1px solid #fca5a5; border-radius:8px; padding:12px 16px; margin-bottom:12px; color:#991b1b; font-size:14px; text-align:left;">
+                    <strong>⚠️ Error:</strong> <span id="errorMessage"></span>
+                </div>
                 <button class="primary-btn pulse" id="btnGenerate">
                     <i class="ph ph-magic-wand"></i> Generar Evaluación
                 </button>

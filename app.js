@@ -13,6 +13,24 @@ let extractedImageText = '';   // Texto OCR para el PDF como texto real
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
+// --- MOSTRAR ERRORES EN PANTALLA (alert() no funciona en iframes de Google Sites) ---
+function showError(msg) {
+    const banner = document.getElementById('errorBanner');
+    const msgEl  = document.getElementById('errorMessage');
+    if (banner && msgEl) {
+        msgEl.textContent = msg;
+        banner.style.display = 'block';
+        banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+        console.error('Error:', msg); // Fallback
+    }
+}
+
+function hideError() {
+    const banner = document.getElementById('errorBanner');
+    if (banner) banner.style.display = 'none';
+}
+
 // --- REFERENCIAS DOM ---
 const phases = {
     setup:   document.getElementById('phase-setup'),
@@ -97,9 +115,20 @@ btnSaveApi.addEventListener('click', () => {
     if (key) {
         localStorage.setItem('gemini_api_key', key);
         settingsModal.classList.remove('open');
-        alert('¡API Key guardada correctamente!');
+        hideError();
+        // Mensaje en pantalla en lugar de alert()
+        const banner = document.getElementById('errorBanner');
+        const msgEl  = document.getElementById('errorMessage');
+        if (banner && msgEl) {
+            banner.style.background = '#dcfce7';
+            banner.style.borderColor = '#86efac';
+            banner.style.color = '#166534';
+            msgEl.textContent = 'API Key guardada correctamente. ¡Ya puedes generar evaluaciones!';
+            banner.style.display = 'block';
+            setTimeout(() => { banner.style.display = 'none'; banner.style.background = '#fee2e2'; banner.style.borderColor = '#fca5a5'; banner.style.color = '#991b1b'; }, 3000);
+        }
     } else {
-        alert('Por favor, ingresa una API Key válida.');
+        showError('Por favor, ingresa una API Key válida (empieza con AIzaSy...).');
     }
 });
 
@@ -252,9 +281,11 @@ btnGenerate.addEventListener('click', async () => {
     const apiKey = localStorage.getItem('gemini_api_key');
     if (!apiKey) {
         settingsModal.classList.add('open');
-        alert('Primero configura tu API Key gratuita haciendo clic en ⚙️');
+        showError('Primero configura tu API Key gratuita haciendo clic en ⚙️');
         return;
     }
+
+    hideError();
 
     currentGrade       = document.getElementById('gradeLevel').value;
     const qCount       = document.getElementById('questionCount').value;
@@ -305,7 +336,7 @@ btnGenerate.addEventListener('click', async () => {
 
     } catch (error) {
         console.error('Error al generar:', error);
-        alert('Ocurrió un error: ' + error.message);
+        showError(error.message);
         switchPhase('setup');
     }
 });
