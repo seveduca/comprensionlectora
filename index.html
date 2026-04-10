@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Evaluaciones de Comprensión Lectora</title>
+    
+    <!-- Fuentes Google -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Iconos Phosphor -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <!-- Scripts Externos -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script> <!-- Para renderizar markdown temporal si es necesario -->
+
+    <!-- Hojas de Estilo Propias -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- Cabecera Superior -->
+    <header class="app-header">
+        <div class="header-content">
+            <div class="logo">
+                <i class="ph ph-books"></i>
+                <div>
+                    <h1>Comprensión Lectora</h1>
+                    <p>Generador Automático con IA</p>
+                </div>
+            </div>
+            <button id="btnSettings" class="icon-btn" title="Configuración de IA">
+                <i class="ph ph-gear"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Contenedor Principal (Donde ocurre la magia) -->
+    <main class="app-container">
+        
+        <!-- PANTALLA 1: Configuración de la Evaluación -->
+        <section id="phase-setup" class="phase active animated fadeIn">
+            
+            <div class="grid-layout">
+                <!-- Columna Izquierda: Opciones Puras -->
+                <div class="card setup-options">
+                    <h2><i class="ph ph-sliders"></i> Opciones de la Prueba</h2>
+                    
+                    <div class="form-group">
+                        <label for="gradeLevel">Nivel de los Estudiantes</label>
+                        <select id="gradeLevel">
+                            <option value="1ro Básico">1ro Básico</option>
+                            <option value="2do Básico">2do Básico</option>
+                            <option value="3ro Básico">3ro Básico</option>
+                            <option value="4to Básico">4to Básico</option>
+                            <option value="5to Básico">5to Básico</option>
+                            <option value="6to Básico">6to Básico</option>
+                            <option value="7mo Básico">7mo Básico</option>
+                            <option value="8vo Básico">8vo Básico</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="questionCount">Cantidad de Preguntas</label>
+                        <div class="range-wrapper">
+                            <input type="range" id="questionCount" min="12" max="24" value="12" oninput="this.nextElementSibling.value = this.value">
+                            <output>12</output>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="alternativesCount">Número de Alternativas por Pregunta</label>
+                        <div class="radio-group row-radio">
+                            <label><input type="radio" name="altCount" value="3"><span>3 (A, B, C)</span></label>
+                            <label><input type="radio" name="altCount" value="4" checked><span>4 (A, B, C, D)</span></label>
+                            <label><input type="radio" name="altCount" value="5"><span>5 (A, B, C, D, E)</span></label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Columna Derecha: Ingreso de Lectura -->
+                <div class="card setup-input">
+                    <h2><i class="ph ph-file-text"></i> Texto de Lectura</h2>
+                    
+                    <div class="tabs">
+                        <button class="tab-btn active" data-target="tab-text"><i class="ph ph-text-aa"></i> Pegar Texto</button>
+                        <button class="tab-btn" data-target="tab-file"><i class="ph ph-upload-simple"></i> Subir PDF/Imagen</button>
+                    </div>
+
+                    <div class="tab-content active" id="tab-text">
+                        <textarea id="textContent" placeholder="Pega aquí el texto o cuento que los estudiantes deberán leer. La IA leerá esto y generará las preguntas usando las 12 estrategias de comprensión..."></textarea>
+                    </div>
+
+                    <div class="tab-content" id="tab-file">
+                        <div class="file-drop-area" id="fileDropArea">
+                            <i class="ph ph-cloud-arrow-up"></i>
+                            <h3>Arrastra y suelta un archivo</h3>
+                            <p>O clic para buscar en el equipo (PDF, JPG, PNG)</p>
+                            <input type="file" id="fileInput" accept=".pdf,image/*" hidden>
+                            <p id="fileName" class="file-name-display"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Botón Principal Generar -->
+            <div class="action-footer">
+                <button class="primary-btn pulse" id="btnGenerate">
+                    <i class="ph ph-magic-wand"></i> Generar Evaluación
+                </button>
+            </div>
+
+        </section>
+
+        <!-- PANTALLA 2: Cargando (Loading State) -->
+        <section id="phase-loading" class="phase">
+            <div class="loading-state">
+                <div class="spinner"></div>
+                <h2 id="loadingText">Leyendo documento e invocando a la IA...</h2>
+                <p>Gemini está aplicando las 12 estrategias de lectura para generar preguntas de calidad.</p>
+                
+                <div class="progress-bar">
+                    <div class="progress-fill" id="loadingProgress"></div>
+                </div>
+                <!-- Animación tonta de pasos para entretener -->
+                <ul class="loading-steps">
+                    <li id="step-extract" class="pending"><i class="ph ph-circle"></i> Extrayendo texto</li>
+                    <li id="step-prompt" class="pending"><i class="ph ph-circle"></i> Preparando instrucciones didácticas</li>
+                    <li id="step-ai" class="pending"><i class="ph ph-circle"></i> Generando preguntas con Gemini</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- PANTALLA 3: Revisión de Resultados -->
+        <section id="phase-review" class="phase">
+            <div class="review-header">
+                <h2><i class="ph ph-check-circle"></i> ¡Evaluación Generada!</h2>
+                <div class="review-actions">
+                    <button class="secondary-btn" id="btnBackToSetup"><i class="ph ph-arrow-left"></i> Volver</button>
+                    <button class="primary-btn" id="btnDownloadPDF"><i class="ph ph-file-pdf"></i> Descargar Prueba en PDF</button>
+                </div>
+            </div>
+
+            <!-- Vista previa para la pantalla (No se imprime directamente) -->
+            <div class="card preview-card">
+                <h3>Previsualización Rápida</h3>
+                <p class="preview-note">Se listarán las preguntas generadas (El PDF final tendrá el formato para el estudiante).</p>
+                <div id="questionsPreview" class="questions-list">
+                    <!-- Las preguntas se inyectarán aquí -->
+                </div>
+            </div>
+
+        </section>
+        
+        <!-- CONTENEDOR INVISIBLE PARA IMPRIMIR EL PDF (Este sigue la estructura solicitada) -->
+        <div id="printContainer" class="print-only">
+            <!-- Contenido inyectado por JS -->
+        </div>
+
+    </main>
+
+    <!-- Modal de Configuración (API KEY) -->
+    <div id="settingsModal" class="modal-backdrop">
+        <div class="modal-window card">
+            <div class="modal-header">
+                <h2><i class="ph ph-key"></i> Configuración de IA</h2>
+                <button id="btnCloseModal" class="icon-btn"><i class="ph ph-x"></i></button>
+            </div>
+            <div class="modal-body">
+                <div class="info-alert info">
+                    <i class="ph ph-info"></i>
+                    <div>
+                        <strong>¿Por qué necesito una clave?</strong>
+                        <p>Para generar preguntas de alta calidad basándose en tu texto, la aplicación usa la Inteligencia Artificial de Google (Gemini). Esta herramienta es 100% gratuita, pero requiere una clave personal tuya asociada a tu correo.</p>
+                    </div>
+                </div>
+
+                <div class="tutorial-steps">
+                    <h3>Pasos para obtenerla (Gratis y toma 1 minuto):</h3>
+                    <ol>
+                        <li>Abre <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio <i class="ph ph-arrow-square-out"></i></a> e inicia sesión con tu cuenta de Google.</li>
+                        <li>Haz clic en el botón grande azul que dice <strong>"Create API Key"</strong>.</li>
+                        <li>Haz clic en la clave que aparece (empieza con "AIzaSy...") y cópiala.</li>
+                        <li>Pégala exactamente aquí abajo y guárdala. ¡Listo!</li>
+                    </ol>
+                </div>
+
+                <div class="form-group margin-top">
+                    <label for="apiKeyInput">Tu API Key de Google Gemini</label>
+                    <div class="password-input">
+                        <input type="password" id="apiKeyInput" placeholder="AIzaSya....................">
+                        <button id="btnToggleVisibility" class="icon-btn-small" tabindex="-1"><i class="ph ph-eye"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="primary-btn" id="btnSaveApi"><i class="ph ph-floppy-disk"></i> Guardar y Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script Principal -->
+    <script src="app.js"></script>
+</body>
+</html>
