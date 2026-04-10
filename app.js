@@ -12,9 +12,18 @@ let uploadedImageBase64 = '';  // Miniatura de imagen para el PDF
 let extractedImageText = '';   // Texto OCR para el PDF como texto real
 
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
+const APP_VERSION = '1.5 - Gemini 2.0 Edition';
 
-// --- MOSTRAR ERRORES EN PANTALLA (alert() no funciona en iframes de Google Sites) ---
+console.log('--- APLICACIÓN INICIADA ---');
+console.log('Versión:', APP_VERSION);
+console.log('Endpoint:', GEMINI_API_URL);
+
+// --- MOSTRAR ERRORES EN PANTALLA ---
 function showError(msg) {
+    // Actualizar versión en el footer si existe
+    const verEl = document.getElementById('app-version');
+    if (verEl) verEl.textContent = APP_VERSION;
+    
     const banner = document.getElementById('errorBanner');
     const msgEl  = document.getElementById('errorMessage');
     if (banner && msgEl) {
@@ -83,6 +92,10 @@ try {
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
     }
 } catch(e) { console.warn('PDF.js no disponible:', e); }
+
+// Actualizar versión en el footer al iniciar
+const versionEl = document.getElementById('app-version');
+if (versionEl) versionEl.textContent = APP_VERSION;
 
 const savedApiKey = localStorage.getItem('gemini_api_key');
 if (savedApiKey && apiKeyInput) apiKeyInput.value = savedApiKey;
