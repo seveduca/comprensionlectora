@@ -144,7 +144,7 @@ btnGenerate.addEventListener('click', async () => {
     const apiKey = localStorage.getItem('gemini_api_key');
     if (!apiKey) {
         settingsModal.classList.add('open');
-        alert("Necesitas configurar tu API Key gratuita primero.");
+        alert("Necesitas configurar tu API Key gratuita primero. Haz clic en el ícono de ⚙️ arriba.");
         return;
     }
 
@@ -165,10 +165,15 @@ btnGenerate.addEventListener('click', async () => {
         
         if (activeTab === 'tab-text') {
             textToAnalize = textContent.value.trim();
-            if(!textToAnalize) throw new Error("No has ingresado texto.");
+            if(!textToAnalize) throw new Error("No has ingresado texto en el área de texto.");
+            extractedImageText = ''; // Limpiar texto OCR previo si estamos en modo texto
+            uploadedImageBase64 = ''; // Limpiar imagen previa
         } else {
-            if(!selectedFile) throw new Error("No has subido ningún archivo.");
+            if(!selectedFile) throw new Error("No has subido ningún archivo. Haz clic en la zona de carga o arrastra un archivo.");
             textToAnalize = await extractTextFromFile(selectedFile);
+            if (!textToAnalize || textToAnalize.trim().length < 20) {
+                throw new Error("No se pudo extraer suficiente texto del archivo. Prueba con un PDF que tenga texto seleccionable, o verifica que la imagen sea legible.");
+            }
         }
 
         setStepStatus('extract', 'done');
@@ -192,7 +197,7 @@ btnGenerate.addEventListener('click', async () => {
         switchPhase('review');
         
     } catch (error) {
-        console.error(error);
+        console.error("Error completo:", error);
         alert("Ocurrió un error: " + error.message);
         switchPhase('setup');
     }
