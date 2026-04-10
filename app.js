@@ -1,8 +1,8 @@
 // ============================================================
 // GENERADOR DE EVALUACIONES DE COMPRENSIÓN LECTORA - V1.6
 // ============================================================
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
-const APP_VERSION = '1.6 - Edición Estable 1.5';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
+const APP_VERSION = '1.7 - Edición Estable v1';
 let currentPhase = 'setup';
 let generatedQuestions = [];
 let currentGrade = '';
