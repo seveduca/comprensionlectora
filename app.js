@@ -77,11 +77,15 @@ const gradeDifficultyMap = {
 // ============================================================
 // INICIALIZACIÓN
 // ============================================================
-document.addEventListener('DOMContentLoaded', () => {
-    const savedKey = localStorage.getItem('gemini_api_key');
-    if (savedKey) apiKeyInput.value = savedKey;
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-});
+// Configurar PDF.js (el script está al final del body, el DOM está listo)
+try {
+    if (typeof pdfjsLib !== 'undefined') {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+    }
+} catch(e) { console.warn('PDF.js no disponible:', e); }
+
+const savedApiKey = localStorage.getItem('gemini_api_key');
+if (savedApiKey && apiKeyInput) apiKeyInput.value = savedApiKey;
 
 // ============================================================
 // NAVEGACIÓN DE FASES
@@ -277,8 +281,31 @@ function processAIResponse(jsonString) {
 // ============================================================
 // BOTÓN PRINCIPAL: GENERAR EVALUACIÓN
 // ============================================================
-btnGenerate.addEventListener('click', async () => {
-    const apiKey = localStorage.getItem('gemini_api_key');
+// ============================================================
+// BOTÓN PRINCIPAL: GENERAR EVALUACIÓN
+// ============================================================
+
+// Función auxiliar para mostrar mensajes en la pantalla de carga
+function setLoadingMessage(msg, isError) {
+    var el = document.getElementById('loadingText');
+    if (el) {
+        el.textContent = msg;
+        el.style.color = isError ? '#dc2626' : '';
+    }
+}
+
+// Función auxiliar segura para actualizar pasos
+function safeSetStep(id, icon, text) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = icon + ' ' + text;
+}
+
+function safeProgress(pct) {
+    if (loadingProgress) loadingProgress.style.width = pct + '%';
+}
+
+btnGenerate.addEventListener('click', async function() {
+    var apiKey = localStorage.getItem('gemini_api_key');
     if (!apiKey) {
         settingsModal.classList.add('open');
         showError('Primero configura tu API Key gratuita haciendo clic en ⚙️');
@@ -287,57 +314,82 @@ btnGenerate.addEventListener('click', async () => {
 
     hideError();
 
-    currentGrade       = document.getElementById('gradeLevel').value;
-    const qCount       = document.getElementById('questionCount').value;
-    currentOptionsCount = document.querySelector('input[name="altCount"]:checked').value;
-    const activeTab    = document.querySelector('.tab-btn.active').dataset.target;
+    var gradeEl = document.getElementById('gradeLevel');
+    var qCountEl = document.getElementById('questionCount');
+    var altCountEl = document.querySelector('input[name="altCount"]:checked');
+    var activeTabEl = document.querySelector('.tab-btn.active');
 
-    switchPhase('loading');
-    resetLoadingSteps();
+    if (!gradeEl || !qCountEl || !altCountEl || !activeTabEl) {
+        showError('Error interno: no se encontraron controles del formulario.');
+        return;
+    }
+
+    currentGrade        = gradeEl.value;
+    var qCount          = qCountEl.value;
+    currentOptionsCount = altCountEl.value;
+    var activeTab       = activeTabEl.dataset.target;
+
+    // Mostrar pantalla de carga
+    if (phases.setup) phases.setup.classList.remove('active');
+    if (phases.loading) phases.loading.classList.add('active');
+    if (phases.review) phases.review.classList.remove('active');
+    currentPhase = 'loading';
+
+    setLoadingMessage('Leyendo documento e invocando a la IA...', false);
+    safeSetStep('step-extract', '⏳', 'Extrayendo texto...');
+    safeSetStep('step-prompt',  '⏳', 'Preparando instrucciones...');
+    safeSetStep('step-ai',      '⏳', 'Esperando Gemini...');
+    safeProgress(5);
 
     try {
         // PASO 1: Extraer texto
-        setStepStatus('extract', 'active');
-        updateProgress(10);
+        setLoadingMessage('Paso 1: Extrayendo texto del documento...', false);
+        safeProgress(15);
 
-        let textToAnalyze = '';
+        var textToAnalyze = '';
 
         if (activeTab === 'tab-text') {
-            textToAnalyze = textContent.value.trim();
+            var ta = document.getElementById('textContent');
+            textToAnalyze = ta ? ta.value.trim() : '';
             if (!textToAnalyze) throw new Error('No has ingresado texto en el área de texto.');
-            // Limpiar datos de archivo previo
-            extractedImageText = '';
-            uploadedImageBase64 = '';
+            extractedImageText  = '';
+            uploadedImageBase64  = '';
         } else {
             if (!selectedFile) throw new Error('No has subido ningún archivo.');
             textToAnalyze = await extractTextFromFile(selectedFile);
             if (!textToAnalyze || textToAnalyze.trim().length < 10) {
-                throw new Error('No se pudo extraer texto suficiente del archivo. Verifica que el PDF tenga texto seleccionable o que la imagen sea legible.');
+                throw new Error('No se pudo extraer texto del archivo subido.');
             }
         }
 
-        setStepStatus('extract', 'done');
-        updateProgress(40);
+        safeSetStep('step-extract', '✅', 'Texto extraído correctamente');
+        safeProgress(40);
 
         // PASO 2: Construir prompt
-        setStepStatus('prompt', 'active');
-        const prompt = buildPrompt(textToAnalyze, currentGrade, qCount, currentOptionsCount);
-        setStepStatus('prompt', 'done');
-        updateProgress(60);
+        setLoadingMessage('Paso 2: Preparando instrucciones para la IA...', false);
+        var prompt = buildPrompt(textToAnalyze, currentGrade, qCount, currentOptionsCount);
+        safeSetStep('step-prompt', '✅', 'Instrucciones preparadas');
+        safeProgress(60);
 
         // PASO 3: Llamar a Gemini
-        setStepStatus('ai', 'active');
-        const responseData = await callGeminiAPI(prompt, apiKey);
-        setStepStatus('ai', 'done');
-        updateProgress(100);
+        setLoadingMessage('Paso 3: Consultando a Gemini AI (puede tardar 30-60 seg)...', false);
+        safeSetStep('step-ai', '🤖', 'Generando preguntas con Gemini...');
+        var responseData = await callGeminiAPI(prompt, apiKey);
+        safeSetStep('step-ai', '✅', 'Preguntas generadas exitosamente');
+        safeProgress(100);
 
+        // PASO 4: Procesar respuesta
         processAIResponse(responseData);
         switchPhase('review');
 
     } catch (error) {
         console.error('Error al generar:', error);
-        showError(error.message);
-        switchPhase('setup');
+        var msg = error && error.message ? error.message : String(error);
+        // Mostrar en pantalla de carga durante 3 segundos para que sea legible
+        setLoadingMessage('❌ ERROR: ' + msg, true);
+        safeProgress(0);
+        showError(msg); // también al banner de error de la pantalla principal
+        setTimeout(function() { switchPhase('setup'); }, 3000);
     }
 });
 
