@@ -1,303 +1,215 @@
-// --- VARIABLES Y ESTADOS ---
+// ============================================================
+// GENERADOR DE EVALUACIONES DE COMPRENSIÓN LECTORA
+// ============================================================
+
+// --- VARIABLES Y ESTADO GLOBAL ---
 let currentPhase = 'setup';
-let extractedText = '';
+let generatedQuestions = [];
+let currentGrade = '';
+let currentOptionsCount = 4;
+let selectedFile = null;
+let uploadedImageBase64 = '';  // Miniatura de imagen para el PDF
+let extractedImageText = '';   // Texto OCR para el PDF como texto real
+
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
-// --- ELEMENTOS DEL DOM ---
+// --- REFERENCIAS DOM ---
 const phases = {
-    setup: document.getElementById('phase-setup'),
+    setup:   document.getElementById('phase-setup'),
     loading: document.getElementById('phase-loading'),
-    review: document.getElementById('phase-review')
+    review:  document.getElementById('phase-review')
 };
-
-const tabs = document.querySelectorAll('.tab-btn');
+const tabs        = document.querySelectorAll('.tab-btn');
 const tabContents = document.querySelectorAll('.tab-content');
 const textContent = document.getElementById('textContent');
-const fileInput = document.getElementById('fileInput');
-const fileDropArea = document.getElementById('fileDropArea');
+const fileInput   = document.getElementById('fileInput');
+const fileDropArea    = document.getElementById('fileDropArea');
 const fileNameDisplay = document.getElementById('fileName');
 
-const btnGenerate = document.getElementById('btnGenerate');
+const btnGenerate    = document.getElementById('btnGenerate');
 const btnBackToSetup = document.getElementById('btnBackToSetup');
 const btnDownloadPDF = document.getElementById('btnDownloadPDF');
 
-const settingsModal = document.getElementById('settingsModal');
-const btnSettings = document.getElementById('btnSettings');
-const btnCloseModal = document.getElementById('btnCloseModal');
-const apiKeyInput = document.getElementById('apiKeyInput');
-const btnSaveApi = document.getElementById('btnSaveApi');
+const settingsModal       = document.getElementById('settingsModal');
+const btnSettings         = document.getElementById('btnSettings');
+const btnCloseModal       = document.getElementById('btnCloseModal');
+const apiKeyInput         = document.getElementById('apiKeyInput');
+const btnSaveApi          = document.getElementById('btnSaveApi');
 const btnToggleVisibility = document.getElementById('btnToggleVisibility');
 
 const loadingSteps = {
     extract: document.getElementById('step-extract'),
-    prompt: document.getElementById('step-prompt'),
-    ai: document.getElementById('step-ai')
+    prompt:  document.getElementById('step-prompt'),
+    ai:      document.getElementById('step-ai')
 };
 const loadingProgress = document.getElementById('loadingProgress');
 
-let generatedQuestions = [];
-let currentGrade = '';
-let currentOptionsCount = 4;
-let uploadedImageBase64 = '';   // Para mostrar la imagen en el PDF
-let extractedImageText = '';    // Para mostrar el texto OCR en el PDF como texto real
-
-// --- INICIALIZACIÓN ---
-document.addEventListener('DOMContentLoaded', () => {
-    // Cargar API Key si existe
-    const savedKey = localStorage.getItem('gemini_api_key');
-    if (savedKey) {
-        apiKeyInput.value = savedKey;
-    }
-
-    // Configurar PDF.js Worker
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
-});
-
-// --- NAVEGACIÓN Y UI ---
-function switchPhase(newPhase) {
-    Object.values(phases).forEach(phase => phase.classList.remove('active'));
-    phases[newPhase].classList.add('active');
-    currentPhase = newPhase;
-}
-
-// Pestañas
-tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-        tabs.forEach(t => t.classList.remove('active'));
-        tabContents.forEach(c => c.classList.remove('active'));
-        
-        tab.classList.add('active');
-        document.getElementById(tab.dataset.target).classList.add('active');
-    });
-});
-
-// Modal Configuracion
-btnSettings.addEventListener('click', () => settingsModal.classList.add('open'));
-btnCloseModal.addEventListener('click', () => settingsModal.classList.remove('open'));
-btnSaveApi.addEventListener('click', () => {
-    const key = apiKeyInput.value.trim();
-    if (key) {
-        localStorage.setItem('gemini_api_key', key);
-        settingsModal.classList.remove('open');
-    } else {
-        alert("Por favor, ingresa una API Key válida.");
-    }
-});
-
-btnToggleVisibility.addEventListener('click', () => {
-    const type = apiKeyInput.type === 'password' ? 'text' : 'password';
-    apiKeyInput.type = type;
-    btnToggleVisibility.innerHTML = type === 'password' ? '<i class="ph ph-eye"></i>' : '<i class="ph ph-eye-slash"></i>';
-});
-
-// --- MANEJO DE ARCHIVOS ---
-fileDropArea.addEventListener('click', () => fileInput.click());
-
-['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    fileDropArea.addEventListener(eventName, preventDefaults, false);
-});
-
-function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
-}
-
-['dragenter', 'dragover'].forEach(eventName => {
-    fileDropArea.addEventListener(eventName, () => fileDropArea.classList.add('dragover'), false);
-});
-
-['dragleave', 'drop'].forEach(eventName => {
-    fileDropArea.addEventListener(eventName, () => fileDropArea.classList.remove('dragover'), false);
-});
-
-fileDropArea.addEventListener('drop', (e) => {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    handleFiles(files);
-});
-
-fileInput.addEventListener('change', function() {
-    handleFiles(this.files);
-});
-
-let selectedFile = null;
-
-function handleFiles(files) {
-    if (files.length > 0) {
-        selectedFile = files[0];
-        fileNameDisplay.textContent = "📎 " + selectedFile.name;
-        
-        // Si es imagen, guardamos el base64 para la miniatura del PDF
-        if (selectedFile.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = (e) => { uploadedImageBase64 = e.target.result; };
-            reader.readAsDataURL(selectedFile);
-        } else {
-            uploadedImageBase64 = '';
-            extractedImageText = '';
-        }
-    }
-}
-
-// --- LÓGICA PRINCIPAL: GENERAR ---
-btnGenerate.addEventListener('click', async () => {
-    const apiKey = localStorage.getItem('gemini_api_key');
-    if (!apiKey) {
-        settingsModal.classList.add('open');
-        alert("Necesitas configurar tu API Key gratuita primero. Haz clic en el ícono de ⚙️ arriba.");
-        return;
-    }
-
-    currentGrade = document.getElementById('gradeLevel').value;
-    const qCount = document.getElementById('questionCount').value;
-    currentOptionsCount = document.querySelector('input[name="altCount"]:checked').value;
-    
-    const activeTab = document.querySelector('.tab-btn.active').dataset.target;
-
-    switchPhase('loading');
-    resetLoadingSteps();
-
-    try {
-        setStepStatus('extract', 'active');
-        updateProgress(10);
-        
-        let textToAnalize = "";
-        
-        if (activeTab === 'tab-text') {
-            textToAnalize = textContent.value.trim();
-            if(!textToAnalize) throw new Error("No has ingresado texto en el área de texto.");
-            extractedImageText = ''; // Limpiar texto OCR previo si estamos en modo texto
-            uploadedImageBase64 = ''; // Limpiar imagen previa
-        } else {
-            if(!selectedFile) throw new Error("No has subido ningún archivo. Haz clic en la zona de carga o arrastra un archivo.");
-            textToAnalize = await extractTextFromFile(selectedFile);
-            if (!textToAnalize || textToAnalize.trim().length < 20) {
-                throw new Error("No se pudo extraer suficiente texto del archivo. Prueba con un PDF que tenga texto seleccionable, o verifica que la imagen sea legible.");
-            }
-        }
-
-        setStepStatus('extract', 'done');
-        updateProgress(40);
-        setStepStatus('prompt', 'active');
-
-        // Procesar texto para la IA
-        const promptText = buildPrompt(textToAnalize, currentGrade, qCount, currentOptionsCount);
-        
-        setStepStatus('prompt', 'done');
-        updateProgress(60);
-        setStepStatus('ai', 'active');
-
-        // Llamada a Gemini API
-        const responseData = await callGeminiAPI(promptText, apiKey);
-        
-        setStepStatus('ai', 'done');
-        updateProgress(100);
-
-        processAIResponse(responseData);
-        switchPhase('review');
-        
-    } catch (error) {
-        console.error("Error completo:", error);
-        alert("Ocurrió un error: " + error.message);
-        switchPhase('setup');
-    }
-});
-
-btnBackToSetup.addEventListener('click', () => switchPhase('setup'));
-
-// --- EXTRACCIÓN DE TEXTO ---
-async function extractTextFromFile(file) {
-    const type = file.type;
-    
-    if (type === 'application/pdf') {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        let text = "";
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const content = await page.getTextContent();
-            const strings = content.items.map(item => item.str);
-            text += strings.join(' ') + " ";
-        }
-        return text;
-    } else if (type.startsWith('image/')) {
-        const result = await Tesseract.recognize(file, 'spa', {
-            logger: m => console.log(m)
-        });
-        extractedImageText = result.data.text; // Guardar para usarlo en el PDF como texto real
-        return result.data.text;
-    } else {
-        throw new Error("Formato de archivo no soportado. Usa PDF o Imágenes.");
-    }
-}
-
-// --- LLAMADA A LA IA ---
-
-// Mapa de dificultad por curso para el prompt de la IA
+// --- MAPA DE DIFICULTAD POR CURSO ---
 const gradeDifficultyMap = {
-    '1ro Básico': 'niños de 6-7 años que están aprendiendo a leer. Usa oraciones muy cortas y sencillas, vocabulario de no más de 2 sílabas cuando sea posible, y preguntas literales simples sobre personajes y acciones obvias del texto.',
+    '1ro Básico': 'niños de 6-7 años que están aprendiendo a leer. Las preguntas deben ser muy simples y literales, con oraciones cortas y vocabulario básico de 1-2 sílabas en lo posible.',
     '2do Básico': 'niños de 7-8 años con lectura emergente. Usa oraciones cortas, vocabulario cotidiano y sencillo, y preguntas sobre hechos concretos del texto.',
     '3ro Básico': 'niños de 8-9 años. Usa vocabulario simple, oraciones de complejidad baja-media, y preguntas que mezclen lo literal con alguna inferencia sencilla.',
     '4to Básico': 'niños de 9-10 años. Usa vocabulario intermedio, oraciones de complejidad media, e incluye preguntas de inferencia y causa-efecto simples.',
     '5to Básico': 'estudiantes de 10-11 años. Usa vocabulario variado, oraciones de complejidad media, e incluye preguntas de análisis, causa-efecto e inferencia.',
     '6to Básico': 'estudiantes de 11-12 años. Usa vocabulario más rico, oraciones de complejidad media-alta, e incluye preguntas de análisis, opinión fundamentada e intención del autor.',
     '7mo Básico': 'estudiantes de 12-13 años. Usa vocabulario complejo, oraciones de nivel intermedio-avanzado, y preguntas de análisis crítico, lenguaje figurado e inferencias profundas.',
-    '8vo Básico': 'estudiantes de 13-14 años. Usa vocabulario avanzado, oraciones de alta complejidad, y preguntas de pensamiento crítico, análisis literário e inferencias complejas.'
+    '8vo Básico': 'estudiantes de 13-14 años. Usa vocabulario avanzado, oraciones de alta complejidad, y preguntas de pensamiento crítico, análisis literario e inferencias complejas.'
 };
 
-function buildPrompt(text, grade, count, altCount) {
-    const difficultyDescription = gradeDifficultyMap[grade] || 'estudiantes de educación básica';
-    return `
-    Actúa como un experto profesor y creador de evaluaciones de español y comprensión lectora.
-    Tu tarea es leer el texto provisto y crear una evaluación de comprensión lectora para ${grade}.
-    
-    NIVEL DE DIFICULTAD Y ADECUACIÓN: Las preguntas, las alternativas y el lenguaje usado deben ser apropiados para ${difficultyDescription} No uses vocabulario, conceptos ni estructuras gramaticales que estén fuera del alcance de este grupo etario.
-    
-    Instrucciones estrictas:
-    1. Genera exactamente ${count} preguntas de selección múltiple.
-    2. Cada pregunta debe tener exactamente ${altCount} alternativas (A, B, C...).
-    3. Solo una alternativa debe ser correcta.
-    4. Cada pregunta DEBE estar diseñada para evaluar una de las siguientes 12 estrategias de comprensión lectora (intenta ser variado y usar la mayoría):
-       - Encontrar la idea principal
-       - Recordar hechos y detalles
-       - Comprender la secuencia
-       - Reconocer causa y efecto
-       - Comparar y contrastar
-       - Hacer predicciones
-       - Hallar el significado de palabras por contexto
-       - Sacar conclusiones y hacer inferencias
-       - Distinguir entre hecho y opinión
-       - Identificar el propósito del autor
-       - Interpretar el lenguaje figurado
-       - Resumir
-       
-    Texto a analizar:
-    "${text}"
-    
-    Responde ÚNICAMENTE con un objeto JSON válido con la siguiente estructura, sin texto adicional ni formateo markdown fuera del JSON válido:
-    {
-       "questions": [
-          {
-             "strategy": "Nombre exacto de la estrategia (una de las 12)",
-             "question": "Texto de la pregunta",
-             "options": ["A) Opción 1", "B) Opción 2", ...],
-             "correctIndex": 0 // el índice 0 base de la opción correcta
-          }
-       ]
-    }
-    `;
+// ============================================================
+// INICIALIZACIÓN
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+    const savedKey = localStorage.getItem('gemini_api_key');
+    if (savedKey) apiKeyInput.value = savedKey;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+});
+
+// ============================================================
+// NAVEGACIÓN DE FASES
+// ============================================================
+function switchPhase(newPhase) {
+    Object.values(phases).forEach(p => p.classList.remove('active'));
+    phases[newPhase].classList.add('active');
+    currentPhase = newPhase;
 }
 
-async function callGeminiAPI(prompt, apiKey) {
-    const url = `${GEMINI_API_URL}?key=${apiKey}`;
-    
-    const requestBody = {
-        contents: [{
-            parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-            temperature: 0.2 // Baja temperatura para JSON más estricto
+// ============================================================
+// PESTAÑAS (TABS)
+// ============================================================
+tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.target).classList.add('active');
+    });
+});
+
+// ============================================================
+// MODAL CONFIGURACIÓN API
+// ============================================================
+btnSettings.addEventListener('click', () => settingsModal.classList.add('open'));
+btnCloseModal.addEventListener('click', () => settingsModal.classList.remove('open'));
+
+btnSaveApi.addEventListener('click', () => {
+    const key = apiKeyInput.value.trim();
+    if (key) {
+        localStorage.setItem('gemini_api_key', key);
+        settingsModal.classList.remove('open');
+        alert('¡API Key guardada correctamente!');
+    } else {
+        alert('Por favor, ingresa una API Key válida.');
+    }
+});
+
+btnToggleVisibility.addEventListener('click', () => {
+    const type = apiKeyInput.type === 'password' ? 'text' : 'password';
+    apiKeyInput.type = type;
+    btnToggleVisibility.innerHTML = type === 'password'
+        ? '<i class="ph ph-eye"></i>'
+        : '<i class="ph ph-eye-slash"></i>';
+});
+
+// ============================================================
+// MANEJO DE ARCHIVOS
+// ============================================================
+fileDropArea.addEventListener('click', () => fileInput.click());
+
+['dragenter','dragover','dragleave','drop'].forEach(evt => {
+    fileDropArea.addEventListener(evt, e => { e.preventDefault(); e.stopPropagation(); });
+});
+['dragenter','dragover'].forEach(evt => fileDropArea.addEventListener(evt, () => fileDropArea.classList.add('dragover')));
+['dragleave','drop'].forEach(evt => fileDropArea.addEventListener(evt, () => fileDropArea.classList.remove('dragover')));
+fileDropArea.addEventListener('drop', e => handleFiles(e.dataTransfer.files));
+fileInput.addEventListener('change', function() { handleFiles(this.files); });
+
+function handleFiles(files) {
+    if (!files || files.length === 0) return;
+    selectedFile = files[0];
+    fileNameDisplay.textContent = '📎 ' + selectedFile.name;
+
+    // Si es imagen: guardar como base64 para miniatura en PDF
+    if (selectedFile.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = e => { uploadedImageBase64 = e.target.result; };
+        reader.readAsDataURL(selectedFile);
+    } else {
+        uploadedImageBase64 = '';
+        extractedImageText = '';
+    }
+}
+
+// ============================================================
+// EXTRACCIÓN DE TEXTO DE ARCHIVOS
+// ============================================================
+async function extractTextFromFile(file) {
+    const type = file.type;
+
+    if (type === 'application/pdf') {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let text = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            text += content.items.map(item => item.str).join(' ') + ' ';
         }
+        return text.trim();
+
+    } else if (type.startsWith('image/')) {
+        const result = await Tesseract.recognize(file, 'spa', {
+            logger: m => console.log('[OCR]', m)
+        });
+        extractedImageText = result.data.text; // Guardar OCR como texto real para el PDF
+        return result.data.text.trim();
+
+    } else {
+        throw new Error('Formato no soportado. Usa PDF o imágenes (JPG, PNG).');
+    }
+}
+
+// ============================================================
+// CONSTRUCCIÓN DEL PROMPT PARA GEMINI
+// ============================================================
+function buildPrompt(text, grade, count, altCount) {
+    const difficulty = gradeDifficultyMap[grade] || 'estudiantes de educación básica';
+    return (
+        'Actúa como un experto profesor y creador de evaluaciones de español y comprensión lectora.\n' +
+        'Tu tarea es crear una evaluación de comprensión lectora para ' + grade + '.\n\n' +
+        'NIVEL DE DIFICULTAD: Las preguntas deben ser apropiadas para ' + difficulty + '\n\n' +
+        'Instrucciones estrictas:\n' +
+        '1. Genera exactamente ' + count + ' preguntas de selección múltiple.\n' +
+        '2. Cada pregunta debe tener exactamente ' + altCount + ' alternativas (A, B, C...).\n' +
+        '3. Solo UNA alternativa es correcta.\n' +
+        '4. Cada pregunta DEBE evaluar una de las 12 estrategias (sé variado):\n' +
+        '   - Encontrar la idea principal\n' +
+        '   - Recordar hechos y detalles\n' +
+        '   - Comprender la secuencia\n' +
+        '   - Reconocer causa y efecto\n' +
+        '   - Comparar y contrastar\n' +
+        '   - Hacer predicciones\n' +
+        '   - Hallar el significado de palabras por contexto\n' +
+        '   - Sacar conclusiones y hacer inferencias\n' +
+        '   - Distinguir entre hecho y opinión\n' +
+        '   - Identificar el propósito del autor\n' +
+        '   - Interpretar el lenguaje figurado\n' +
+        '   - Resumir\n\n' +
+        'Texto a analizar:\n"' + text + '"\n\n' +
+        'Responde ÚNICAMENTE con un JSON válido con esta estructura exacta (sin texto adicional, sin markdown):\n' +
+        '{"questions":[{"strategy":"nombre estrategia","question":"texto pregunta","options":["A) opción","B) opción"],"correctIndex":0}]}'
+    );
+}
+
+// ============================================================
+// LLAMADA A GEMINI API
+// ============================================================
+async function callGeminiAPI(prompt, apiKey) {
+    const url = GEMINI_API_URL + '?key=' + apiKey;
+
+    const requestBody = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.2 }
     };
 
     const response = await fetch(url, {
@@ -307,192 +219,248 @@ async function callGeminiAPI(prompt, apiKey) {
     });
 
     if (!response.ok) {
-        const err = await response.json();
-        throw new Error("Falló la llamada a la IA: " + (err.error?.message || response.statusText));
+        const err = await response.json().catch(() => ({}));
+        throw new Error('Error de la IA: ' + (err.error && err.error.message ? err.error.message : response.statusText));
     }
 
     const data = await response.json();
     return data.candidates[0].content.parts[0].text;
 }
 
+// ============================================================
+// PROCESAR RESPUESTA DE IA
+// ============================================================
 function processAIResponse(jsonString) {
     try {
-        // Limpiar posible formato markdown devuelto por la IA
-        let rawText = jsonString.trim();
-        let startIndex = rawText.indexOf('{');
-        let endIndex = rawText.lastIndexOf('}');
-        if (startIndex !== -1 && endIndex !== -1) {
-            rawText = rawText.substring(startIndex, endIndex + 1);
-        }
-        
-        const data = JSON.parse(rawText);
+        let raw = jsonString.trim();
+        const start = raw.indexOf('{');
+        const end   = raw.lastIndexOf('}');
+        if (start !== -1 && end !== -1) raw = raw.substring(start, end + 1);
+        const data = JSON.parse(raw);
         generatedQuestions = data.questions;
         renderPreview();
-    } catch (e) {
-        console.error("Texto crudo devuelto por IA:", jsonString);
-        throw new Error("La IA devolvió texto, pero no pudo ser leído como preguntas. Intenta de nuevo.");
+    } catch(e) {
+        console.error('Respuesta cruda IA:', jsonString);
+        throw new Error('La IA respondió, pero no se pudo interpretar el resultado. Intenta de nuevo.');
     }
 }
 
-// --- RENDERIZADO VISUAL ---
+// ============================================================
+// BOTÓN PRINCIPAL: GENERAR EVALUACIÓN
+// ============================================================
+btnGenerate.addEventListener('click', async () => {
+    const apiKey = localStorage.getItem('gemini_api_key');
+    if (!apiKey) {
+        settingsModal.classList.add('open');
+        alert('Primero configura tu API Key gratuita haciendo clic en ⚙️');
+        return;
+    }
+
+    currentGrade       = document.getElementById('gradeLevel').value;
+    const qCount       = document.getElementById('questionCount').value;
+    currentOptionsCount = document.querySelector('input[name="altCount"]:checked').value;
+    const activeTab    = document.querySelector('.tab-btn.active').dataset.target;
+
+    switchPhase('loading');
+    resetLoadingSteps();
+
+    try {
+        // PASO 1: Extraer texto
+        setStepStatus('extract', 'active');
+        updateProgress(10);
+
+        let textToAnalyze = '';
+
+        if (activeTab === 'tab-text') {
+            textToAnalyze = textContent.value.trim();
+            if (!textToAnalyze) throw new Error('No has ingresado texto en el área de texto.');
+            // Limpiar datos de archivo previo
+            extractedImageText = '';
+            uploadedImageBase64 = '';
+        } else {
+            if (!selectedFile) throw new Error('No has subido ningún archivo.');
+            textToAnalyze = await extractTextFromFile(selectedFile);
+            if (!textToAnalyze || textToAnalyze.trim().length < 10) {
+                throw new Error('No se pudo extraer texto suficiente del archivo. Verifica que el PDF tenga texto seleccionable o que la imagen sea legible.');
+            }
+        }
+
+        setStepStatus('extract', 'done');
+        updateProgress(40);
+
+        // PASO 2: Construir prompt
+        setStepStatus('prompt', 'active');
+        const prompt = buildPrompt(textToAnalyze, currentGrade, qCount, currentOptionsCount);
+        setStepStatus('prompt', 'done');
+        updateProgress(60);
+
+        // PASO 3: Llamar a Gemini
+        setStepStatus('ai', 'active');
+        const responseData = await callGeminiAPI(prompt, apiKey);
+        setStepStatus('ai', 'done');
+        updateProgress(100);
+
+        processAIResponse(responseData);
+        switchPhase('review');
+
+    } catch (error) {
+        console.error('Error al generar:', error);
+        alert('Ocurrió un error: ' + error.message);
+        switchPhase('setup');
+    }
+});
+
+btnBackToSetup.addEventListener('click', () => switchPhase('setup'));
+
+// ============================================================
+// RENDERIZAR PREGUNTAS EN PANTALLA (PREVISUALIZACIÓN)
+// ============================================================
 function renderPreview() {
     const container = document.getElementById('questionsPreview');
     container.innerHTML = '';
-    
+
     generatedQuestions.forEach((q, index) => {
         const item = document.createElement('div');
         item.className = 'q-preview-item';
-        
+
         let optionsHtml = '';
         q.options.forEach((opt, idx) => {
             const isCorrect = idx === q.correctIndex;
-            optionsHtml += `<li class="${isCorrect ? 'correct-answer' : ''}">${opt} ${isCorrect ? ' <strong>(Correcta)</strong>' : ''}</li>`;
+            optionsHtml += '<li class="' + (isCorrect ? 'correct-answer' : '') + '">'
+                + opt + (isCorrect ? ' <strong>(Correcta)</strong>' : '') + '</li>';
         });
 
-        item.innerHTML = `
-            <span class="q-meta"><i class="ph ph-brain"></i> ${q.strategy}</span>
-            <h4>${index + 1}. ${q.question}</h4>
-            <ul>${optionsHtml}</ul>
-        `;
+        item.innerHTML =
+            '<span class="q-meta"><i class="ph ph-brain"></i> ' + q.strategy + '</span>' +
+            '<h4>' + (index + 1) + '. ' + q.question + '</h4>' +
+            '<ul>' + optionsHtml + '</ul>';
+
         container.appendChild(item);
     });
 }
 
-// --- GENERACIÓN DE PDF ---
-btnDownloadPDF.addEventListener('click', () => {
-    generatePDF();
-});
+// ============================================================
+// GENERAR PDF
+// ============================================================
+btnDownloadPDF.addEventListener('click', () => generatePDF());
 
 function generatePDF() {
     const printContainer = document.getElementById('printContainer');
-    const today = new Date().toLocaleDateString('es-CL');
-    
-    // Calcular puntaje (1 punto por pregunta)
-    const totalScore = generatedQuestions.length;
+    const today          = new Date().toLocaleDateString('es-CL');
+    const totalScore     = generatedQuestions.length;
 
-    // Crear el HTML para imprimir
-    let pdfHtml = `
-    <div style="font-family: Arial, sans-serif; color: #000; background: #fff;">
-        <h1 style="text-align: center; margin-bottom: 20px; font-size: 24px; color: #1e3a8a;">Evaluación de Comprensión Lectora</h1>
-        
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ccc;">
-            <tr>
-                <td style="padding: 10px; border: 1px solid #ccc; width: 33%;"><strong>Nivel:</strong> ${currentGrade}</td>
-                <td style="padding: 10px; border: 1px solid #ccc; width: 33%;"><strong>Fecha:</strong> ${today}</td>
-                <td style="padding: 10px; border: 1px solid #ccc; width: 33%;"><strong>Puntaje Inicial:</strong> ${totalScore} | <strong>Puntaje Obtenido:</strong> _____</td>
-            </tr>
-            <tr>
-                <td colspan="3" style="padding: 10px; border: 1px solid #ccc;"><strong>Nombre del Estudiante:</strong> ______________________________________________________________</td>
-            </tr>
-        </table>
-        
-        <div style="background: #f8fafc; padding: 15px; border-left: 4px solid #3b82f6; margin-bottom: 30px;">
-            <p style="margin: 0; font-weight: bold; font-size: 14px;">Instrucción:</p>
-            <p style="margin: 5px 0 0 0; font-size: 14px;">Lee atentamente el siguiente texto y luego marca la alternativa correcta según corresponda.</p>
-        </div>
+    // --- Cabecera del PDF ---
+    let pdfHtml =
+        '<div style="font-family: Arial, sans-serif; color: #000; background: #fff;">' +
+        '<h1 style="text-align: center; margin-bottom: 20px; font-size: 24px; color: #1e3a8a;">Evaluación de Comprensión Lectora</h1>' +
 
-        <div style="margin-bottom: 40px; text-align: justify; line-height: 1.6; font-size: 14px;">
-            <h3>Texto Principal</h3>
-        `;
-        
-    // Incluir siempre AMBOS si existen: imagen y/o texto
-    let rawTextContent = '';
-    let imageHtml = '';
+        '<table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #ccc;">' +
+        '<tr>' +
+        '<td style="padding: 10px; border: 1px solid #ccc; width: 33%;"><strong>Nivel:</strong> ' + currentGrade + '</td>' +
+        '<td style="padding: 10px; border: 1px solid #ccc; width: 33%;"><strong>Fecha:</strong> ' + today + '</td>' +
+        '<td style="padding: 10px; border: 1px solid #ccc; width: 33%;"><strong>Puntaje Ideal:</strong> ' + totalScore + ' | <strong>Puntaje Obtenido:</strong> _____</td>' +
+        '</tr>' +
+        '<tr>' +
+        '<td colspan="3" style="padding: 10px; border: 1px solid #ccc;"><strong>Nombre del Estudiante:</strong> ______________________________________________________________</td>' +
+        '</tr>' +
+        '</table>' +
 
-    // Texto del textarea (independiente de qué pestaña está activa)
-    if (textContent.value.trim()) {
-        rawTextContent = textContent.value.replace(/\n/g, '<br>');
-    }
+        '<div style="background: #f8fafc; padding: 15px; border-left: 4px solid #3b82f6; margin-bottom: 30px;">' +
+        '<p style="margin: 0; font-weight: bold; font-size: 14px;">Instrucción:</p>' +
+        '<p style="margin: 5px 0 0 0; font-size: 14px;">Lee atentamente el siguiente texto y luego marca la alternativa correcta según corresponda.</p>' +
+        '</div>' +
 
-    // Si hay texto OCR extraído de imagen, usarlo como texto real (seleccionable)
-    if (extractedImageText.trim()) {
-        const ocrText = extractedImageText.replace(/\n/g, '<br>');
-        rawTextContent = (rawTextContent ? rawTextContent + '<br><br>' : '') + ocrText;
-    }
+        '<div style="margin-bottom: 40px; text-align: justify; line-height: 1.6; font-size: 14px;">' +
+        '<h3>Texto de Lectura</h3>';
 
-    // Imagen subida: se muestra como miniatura decorativa (opcional)
+    // --- Contenido: imagen y/o texto ---
+    // Imagen miniatura (si existe)
     if (uploadedImageBase64) {
-        imageHtml = `<div style="text-align: center; margin-bottom: 15px;"><img src="${uploadedImageBase64}" style="max-width: 60%; max-height: 250px; border: 1px solid #ddd; border-radius: 4px;" alt="Imagen de la lectura"></div>`;
+        pdfHtml += '<div style="text-align: center; margin-bottom: 15px;">' +
+            '<img src="' + uploadedImageBase64 + '" style="max-width: 60%; max-height: 250px; border: 1px solid #ddd; border-radius: 4px;" alt="Imagen de la lectura">' +
+            '</div>';
     }
 
-    // Si no hay nada, indicar que el texto viene del PDF
-    if (!rawTextContent && !imageHtml) {
-        rawTextContent = '<em>(El texto de la lectura fue extraído del documento subido)</em>';
+    // Texto del textarea (siempre incluido si tiene contenido)
+    const textareaContent = textContent.value.trim();
+    if (textareaContent) {
+        pdfHtml += '<p>' + textareaContent.replace(/\n/g, '<br>') + '</p>';
     }
 
-    const textBlock = rawTextContent ? '<p>' + rawTextContent + '</p>' : '';
+    // Texto OCR desde imagen (como texto real y seleccionable)
+    if (extractedImageText && extractedImageText.trim()) {
+        const ocrFormatted = extractedImageText.trim().replace(/\n/g, '<br>');
+        pdfHtml += '<p>' + ocrFormatted + '</p>';
+    }
 
-    pdfHtml += `
-            ${imageHtml}
-            ${textBlock}
-        </div>
-        
-        <h3 style="margin-bottom: 15px;">Preguntas de Comprensión</h3>
-    `;
+    // Si no hay nada
+    if (!uploadedImageBase64 && !textareaContent && !extractedImageText) {
+        pdfHtml += '<p><em>(Texto extraído del documento subido)</em></p>';
+    }
+
+    pdfHtml += '</div>';
+
+    // --- Preguntas ---
+    pdfHtml += '<h3 style="margin-bottom: 15px;">Preguntas de Comprensión</h3>';
 
     generatedQuestions.forEach((q, i) => {
-        let opts = q.options.map(o => `<div style="margin-bottom: 6px; margin-left: 20px;">${o}</div>`).join('');
-        
-        pdfHtml += `
-            <div style="margin-bottom: 25px; page-break-inside: avoid;">
-                <p style="font-weight: bold; margin-bottom: 8px;">${i + 1}. ${q.question}</p>
-                ${opts}
-            </div>
-        `;
+        let opts = q.options.map(o => '<div style="margin-bottom: 6px; margin-left: 20px;">' + o + '</div>').join('');
+        pdfHtml +=
+            '<div style="margin-bottom: 25px; page-break-inside: avoid;">' +
+            '<p style="font-weight: bold; margin-bottom: 8px;">' + (i + 1) + '. ' + q.question + '</p>' +
+            opts +
+            '</div>';
     });
-    
-    // Clave de respuestas al final (en una página nueva si es posible)
-    pdfHtml += `
-        <div style="margin-top: 50px; page-break-before: always; border-top: 2px dashed #ccc; padding-top: 20px;">
-            <h3 style="color: #64748b;">Clave de Respuestas (Para el Docente)</h3>
-            <ul style="list-style: none; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
-    `;
-    
-    generatedQuestions.forEach((q, i) => {
-        // Encontrar la letra (A, B, C...) de la opción correcta
-        const rightChar = q.options[q.correctIndex].substring(0, 1);
-        pdfHtml += `<li><strong>${i+1}.</strong> ${q.options[q.correctIndex]} <br><span style="font-size: 10px; color:#888;">(${q.strategy})</span></li>`;
-    });
-    
-    pdfHtml += `
-            </ul>
-        </div>
-    </div>
-    `;
 
+    // --- Clave de respuestas ---
+    pdfHtml +=
+        '<div style="margin-top: 50px; page-break-before: always; border-top: 2px dashed #ccc; padding-top: 20px;">' +
+        '<h3 style="color: #64748b;">Clave de Respuestas (Para el Docente)</h3>' +
+        '<ul style="list-style: none; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">';
+
+    generatedQuestions.forEach((q, i) => {
+        pdfHtml += '<li><strong>' + (i + 1) + '.</strong> ' + q.options[q.correctIndex] +
+            '<br><span style="font-size: 10px; color:#888;">(' + q.strategy + ')</span></li>';
+    });
+
+    pdfHtml += '</ul></div></div>';
+
+    // --- Imprimir ---
     printContainer.innerHTML = pdfHtml;
     printContainer.style.display = 'block';
 
-    const element = printContainer.children[0];
-    
     const opt = {
-        margin:       [2, 2], // 2 cm top/bottom/left/right
-        filename:     'Evaluacion_Comprension_Lectora.pdf',
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2 },
-        jsPDF:        { unit: 'cm', format: 'letter', orientation: 'portrait' }
+        margin:      [2, 2],
+        filename:    'Evaluacion_Comprension_Lectora.pdf',
+        image:       { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF:       { unit: 'cm', format: 'letter', orientation: 'portrait' }
     };
 
-    html2pdf().set(opt).from(element).save().then(() => {
+    html2pdf().set(opt).from(printContainer.children[0]).save().then(() => {
         printContainer.style.display = 'none';
         printContainer.innerHTML = '';
     });
 }
 
-// --- UTILIDADES ---
+// ============================================================
+// UTILIDADES DE LOADING
+// ============================================================
 function setStepStatus(stepKey, status) {
-    loadingSteps[stepKey].className = status;
-    if(status === 'done'){
-        loadingSteps[stepKey].innerHTML = `<i class="ph ph-check-circle"></i> ${loadingSteps[stepKey].innerText}`;
+    const el = loadingSteps[stepKey];
+    const text = el.textContent.trim();
+    el.className = status;
+    if (status === 'active') {
+        el.innerHTML = '<i class="ph ph-circle-notch"></i> ' + text;
+    } else if (status === 'done') {
+        el.innerHTML = '<i class="ph ph-check-circle"></i> ' + text;
+    } else {
+        el.innerHTML = '<i class="ph ph-circle"></i> ' + text;
     }
 }
 
 function resetLoadingSteps() {
-    ['extract', 'prompt', 'ai'].forEach(s => {
-        loadingSteps[s].className = 'pending';
-        let originalText = loadingSteps[s].innerText;
-        loadingSteps[s].innerHTML = `<i class="ph ph-circle"></i> ${originalText}`;
-    });
+    ['extract', 'prompt', 'ai'].forEach(s => setStepStatus(s, 'pending'));
     updateProgress(0);
 }
 
