@@ -38,7 +38,8 @@ const loadingProgress = document.getElementById('loadingProgress');
 let generatedQuestions = [];
 let currentGrade = '';
 let currentOptionsCount = 4;
-let uploadedImageBase64 = ''; // Para guardar la imagen como base64 y mostrarla en el PDF
+let uploadedImageBase64 = '';   // Para mostrar la imagen en el PDF
+let extractedImageText = '';    // Para mostrar el texto OCR en el PDF como texto real
 
 // --- INICIALIZACIÓN ---
 document.addEventListener('DOMContentLoaded', () => {
@@ -126,13 +127,14 @@ function handleFiles(files) {
         selectedFile = files[0];
         fileNameDisplay.textContent = "📎 " + selectedFile.name;
         
-        // Si es imagen, guardamos el base64 para incrustarla en el PDF
+        // Si es imagen, guardamos el base64 para la miniatura del PDF
         if (selectedFile.type.startsWith('image/')) {
             const reader = new FileReader();
             reader.onload = (e) => { uploadedImageBase64 = e.target.result; };
             reader.readAsDataURL(selectedFile);
         } else {
-            uploadedImageBase64 = ''; // Limpiar si es un PDF
+            uploadedImageBase64 = '';
+            extractedImageText = '';
         }
     }
 }
@@ -217,6 +219,7 @@ async function extractTextFromFile(file) {
         const result = await Tesseract.recognize(file, 'spa', {
             logger: m => console.log(m)
         });
+        extractedImageText = result.data.text; // Guardar para usarlo en el PDF como texto real
         return result.data.text;
     } else {
         throw new Error("Formato de archivo no soportado. Usa PDF o Imágenes.");
@@ -396,12 +399,18 @@ function generatePDF() {
         rawTextContent = textContent.value.replace(/\n/g, '<br>');
     }
 
-    // Imagen subida (si existe)
-    if (uploadedImageBase64) {
-        imageHtml = `<div style="text-align: center; margin-bottom: 20px;"><img src="${uploadedImageBase64}" style="max-width: 100%; max-height: 350px; border: 1px solid #ddd; border-radius: 4px;" alt="Imagen de la lectura"></div>`;
+    // Si hay texto OCR extraído de imagen, usarlo como texto real (seleccionable)
+    if (extractedImageText.trim()) {
+        const ocrText = extractedImageText.replace(/\n/g, '<br>');
+        rawTextContent = (rawTextContent ? rawTextContent + '<br><br>' : '') + ocrText;
     }
 
-    // Si no hay ni texto ni imagen (fue PDF), indicamos que el texto viene del archivo
+    // Imagen subida: se muestra como miniatura decorativa (opcional)
+    if (uploadedImageBase64) {
+        imageHtml = `<div style="text-align: center; margin-bottom: 15px;"><img src="${uploadedImageBase64}" style="max-width: 60%; max-height: 250px; border: 1px solid #ddd; border-radius: 4px;" alt="Imagen de la lectura"></div>`;
+    }
+
+    // Si no hay nada, indicar que el texto viene del PDF
     if (!rawTextContent && !imageHtml) {
         rawTextContent = '<em>(El texto de la lectura fue extraído del documento subido)</em>';
     }
