@@ -1,12 +1,12 @@
 // ============================================================
-// GENERADOR DE EVALUACIONES - VERSIÓN 1.7.2 (ULTRA ESTABLE)
+// GENERADOR DE EVALUACIONES - VERSIÓN 1.7.3 (ESTABLE 2026)
 // ============================================================
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
-const APP_VERSION = '1.7.2 - Conexión v1beta Estable';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent';
+const APP_VERSION = '1.7.3 - Conexión v1 Estable (2026)';
 
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("Iniciando Ver 1.7.2...");
+    console.log("Iniciando Ver 1.7.3 (2026)...");
 
     // --- VARIABLES ---
     let generatedQuestions = [];
