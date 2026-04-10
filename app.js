@@ -11,7 +11,7 @@ let selectedFile = null;
 let uploadedImageBase64 = '';  // Miniatura de imagen para el PDF
 let extractedImageText = '';   // Texto OCR para el PDF como texto real
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 // --- MOSTRAR ERRORES EN PANTALLA (alert() no funciona en iframes de Google Sites) ---
 function showError(msg) {
